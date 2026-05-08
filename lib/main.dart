@@ -3,7 +3,6 @@ import 'task_repository.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/task.dart';
-import 'package:flutter/material.dart';
 import '../services/task_api_service.dart';
 void main() {
   runApp(MyApp());
@@ -213,53 +212,54 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           Expanded(
-            child: ListView.builder(
-              itemCount: filteredTasks.length,
-              itemBuilder: (context, index) {
-                final task = filteredTasks[index];
+            child: TaskListScreen(),
+            // ListView.builder(
+            //   itemCount: filteredTasks.length,
+            //   itemBuilder: (context, index) {
+            //     final task = filteredTasks[index];
 
-                return Dismissible(
-                  key: ValueKey(task.title),
-                  onDismissed: (direction) {
-                    setState(() {
-                      TaskRepository.tasks.remove(task);
-                    });
+            //     return Dismissible(
+            //       key: ValueKey(task.title),
+            //       onDismissed: (direction) {
+            //         setState(() {
+            //           TaskRepository.tasks.remove(task);
+            //         });
 
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Zadanie usunięte")),
-                    );
-                  },
-                  child: TaskCard(
-                    title: task.title,
-                    subtitle: task.deadline,
-                    done: task.done,
-                    onChanged: (value) {
-                      setState(() {
-                        task.done = value!;
-                      });
-                    },
-                    onTap: () async {
-                      final updatedTask = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              EditTaskScreen(task: task),
-                        ),
-                      );
+            //         ScaffoldMessenger.of(context).showSnackBar(
+            //           SnackBar(content: Text("Zadanie usunięte")),
+            //         );
+            //       },
+            //       child: TaskCard(
+            //         title: task.title,
+            //         subtitle: task.deadline,
+            //         done: task.done,
+            //         onChanged: (value) {
+            //           setState(() {
+            //             task.done = value!;
+            //           });
+            //         },
+            //         onTap: () async {
+            //           final updatedTask = await Navigator.push(
+            //             context,
+            //             MaterialPageRoute(
+            //               builder: (context) =>
+            //                   EditTaskScreen(task: task),
+            //             ),
+            //           );
 
-                      if (updatedTask != null) {
-                        setState(() {
-                          final originalIndex =
-                              TaskRepository.tasks.indexOf(task);
-                          TaskRepository.tasks[originalIndex] =
-                              updatedTask;
-                        });
-                      }
-                    },
-                  ),
-                );
-              },
-            ),
+            //           if (updatedTask != null) {
+            //             setState(() {
+            //               final originalIndex =
+            //                   TaskRepository.tasks.indexOf(task);
+            //               TaskRepository.tasks[originalIndex] =
+            //                   updatedTask;
+            //             });
+            //           }
+            //         },
+            //       ),
+            //     );
+            //   },
+            // ),
           ),
         ],
       ),
@@ -421,11 +421,32 @@ class _TaskListScreenState extends State<TaskListScreen> {
     return FutureBuilder<List<Task>>(
       future: tasksFuture,
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+                child: CircularProgressIndicator(),
+            );
+        }
+        if (snapshot.hasError) {
+            return Center(
+                child: Text("Błąd: ${snapshot.error}"),
+            );
+        }
         final tasks = snapshot.data ?? [];
         return ListView.builder(
           itemCount: tasks.length,
           itemBuilder: (context, index) {
-// widget TaskCard dla każdego elementu
+              final task = tasks[index];
+
+            return TaskCard(
+              title: task.title,
+              subtitle: task.deadline,
+              done: task.done,
+              onChanged: (value) {
+                setState(() {
+                  task.done = value ?? false;
+                });
+              },
+            );
           },
         );
       },
@@ -433,10 +454,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
   }
 }
 
-void initState() {
-  super.initState();
-  tasksFuture = TaskApiService.fetchTasks();
-}
+// void initState() {
+//   super.initState();
+//   tasksFuture = TaskApiService.fetchTasks();
+// }
 
 
 
