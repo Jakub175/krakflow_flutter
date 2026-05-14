@@ -4,8 +4,53 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/task.dart';
 import '../services/task_api_service.dart';
-void main() {
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:drift/drift.dart';
+import 'package:hive_ce/hive.dart';
+import 'TaskSyncService.dart';
+import 'TaskLocalDatabase.dart';
+import 'dart:math';
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  await Hive.openBox("settings");
   runApp(MyApp());
+}
+
+Task(
+  id: Random().nextInt(1000000),
+  title: title,
+  deadline: deadline,
+  priority: priority,
+  done: false,
+);
+//
+// Future<void> addTask(Task task) async {
+//   await TaskLocalDatabase.addTask(task);
+//   await loadTasks();
+// }
+
+// class Tasks extends Table {
+//   IntColumn get id => integer().autoIncrement()();
+//   TextColumn get title => text()();
+//   TextColumn get priority => text()();
+//   BoolColumn get done => boolean().withDefault(const Constant(false))();
+// }
+
+
+
+class SettingsService {
+  static const String _filterKey = "selected_filter";
+  static Future<void> saveSelectedFilter(String filter) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_filterKey, filter);
+  }
+  static Future<String> loadSelectedFilter() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_filterKey) ?? "wszystkie";
+  }
 }
 
 
@@ -118,7 +163,7 @@ class MyApp extends StatelessWidget {
 //     );
 //   }
 // }
-  
+
 
 
 class HomeScreen extends StatefulWidget {
@@ -130,6 +175,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String selectedFilter = "wszystkie";
+  int allTasksCount = 0;
+  int doneTasksCount = 0;
+  int todoTasksCount = 0;
+
+  void updateCounters(List<Task> tasks) {
+    setState(() {
+      allTasksCount = tasks.length;
+      doneTasksCount = tasks.where((task) => task.done).length;
+      todoTasksCount = tasks.where((task) => !task.done).length;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -212,54 +268,68 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
 
           Expanded(
-            child: TaskListScreen(),
-            // ListView.builder(
-            //   itemCount: filteredTasks.length,
-            //   itemBuilder: (context, index) {
-            //     final task = filteredTasks[index];
+            // child: TaskListScreen(),
+            child: ListView.builder(
+              itemCount: filteredTasks.length,
+              itemBuilder: (context, index) {
+                final task = filteredTasks[index];
 
-            //     return Dismissible(
-            //       key: ValueKey(task.title),
-            //       onDismissed: (direction) {
-            //         setState(() {
-            //           TaskRepository.tasks.remove(task);
-            //         });
+                return Dismissible(
+                  key: ValueKey(task.title),
+                  onDismissed: (direction) {
+                    setState(() {
+                      TaskRepository.tasks.remove(task);
+                    });
 
-            //         ScaffoldMessenger.of(context).showSnackBar(
-            //           SnackBar(content: Text("Zadanie usunięte")),
-            //         );
-            //       },
-            //       child: TaskCard(
-            //         title: task.title,
-            //         subtitle: task.deadline,
-            //         done: task.done,
-            //         onChanged: (value) {
-            //           setState(() {
-            //             task.done = value!;
-            //           });
-            //         },
-            //         onTap: () async {
-            //           final updatedTask = await Navigator.push(
-            //             context,
-            //             MaterialPageRoute(
-            //               builder: (context) =>
-            //                   EditTaskScreen(task: task),
-            //             ),
-            //           );
-
-            //           if (updatedTask != null) {
-            //             setState(() {
-            //               final originalIndex =
-            //                   TaskRepository.tasks.indexOf(task);
-            //               TaskRepository.tasks[originalIndex] =
-            //                   updatedTask;
-            //             });
-            //           }
-            //         },
-            //       ),
-            //     );
-            //   },
-            // ),
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Zadanie usunięte")),
+                    );
+                  },
+                  child: TaskCard(
+                    title: task.title,
+                    subtitle: task.deadline,
+                    done: task.done,
+                    onChanged: (value) {
+                      setState(() {
+                        task.done = value!;
+                      });
+                    },
+                    onTap: () async {
+                      final Task? updatedTask = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => EditTaskScreen(task: task),
+                        ),
+                      );
+                      if (updatedTask != null) {
+                        await TaskLocalDatabase.updateTask(updatedTask);
+                        setState(() {
+                          tasksFuture = loadTasks();
+                        });
+                      }
+                    },
+                    // onTap: () async {
+                    //   final updatedTask = await Navigator.push(
+                    //     context,
+                    //     MaterialPageRoute(
+                    //       builder: (context) =>
+                    //           EditTaskScreen(task: task),
+                    //     ),
+                    //   );
+                    //
+                    //   if (updatedTask != null) {
+                    //     setState(() {
+                    //       final originalIndex =
+                    //           TaskRepository.tasks.indexOf(task);
+                    //       TaskRepository.tasks[originalIndex] =
+                    //           updatedTask;
+                    //     });
+                    //   }
+                    // },
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -414,8 +484,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
   @override
   void initState() {
     super.initState();
-    tasksFuture = TaskApiService.fetchTasks();
+    // tasksFuture = TaskApiService.fetchTasks();
+    tasksFuture = loadTasks();
   }
+
+  Future<List<Task>> loadTasks() async {
+    await TaskSyncService.loadInitialDataIfNeeded();
+    return TaskLocalDatabase.getTasks();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Task>>(
